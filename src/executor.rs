@@ -15,19 +15,10 @@ use std::{
 
 use flutter_rust_bridge::{StreamSink, support::WireSyncReturnData};
 
-use crate::api::{FutureEvent};
+use crate::api::{FutureEvent, PREWAKERS, WAKER};
 
 pub type LocalBoxFuture<'a, T> = Pin<alloc::boxed::Box<dyn Future<Output = T> + 'a>>;
 
-pub fn my_spawn(event: StreamSink<FutureEvent>, future: impl Future<Output = ()> + 'static) {
-    let res: Rc<RefCell<Option<Rc<Task>>>> = Rc::new(RefCell::new(None));
-    let raw = Rc::into_raw(res) as _;
-    event.add(FutureEvent::Init(raw));
-    let task = Task::spawn(Box::pin(future), event);
-    let res = unsafe { Rc::<RefCell<Option<Rc<Task>>>>::from_raw(raw as _) };
-    res.as_ref().borrow_mut().replace(task);
-    drop(Rc::into_raw(res));
-}
 
 /// Inner [`Task`]'s data.
 struct Inner {
@@ -67,23 +58,16 @@ pub struct Task {
     /// Indicates whether there is a [`Poll::Pending`] awake request of this
     /// [`Task`].
     is_scheduled: Cell<bool>,
-    cb: StreamSink<FutureEvent>,
 }
 
-impl Drop for Task {
-    fn drop(&mut self) {
-        self.cb.close();
-    }
-}
 
 impl Task {
     /// Spawns a new [`Task`] that will drive the given [`Future`].
     ///
     /// [`Future`]: std::future::Future
-    pub fn spawn(future: LocalBoxFuture<'static, ()>, event: StreamSink<FutureEvent>) -> Rc<Self> {
+    pub fn spawn(future: LocalBoxFuture<'static, ()>) {
         let this = Rc::new(Self {
             inner: RefCell::new(None),
-            cb: event,
             is_scheduled: Cell::new(false),
         });
 
@@ -92,7 +76,6 @@ impl Task {
         drop(this.inner.borrow_mut().replace(Inner { future, waker }));
 
         Self::wake_by_ref(&this);
-        this
     }
 
     /// Polls the underlying [`Future`].
@@ -123,12 +106,33 @@ impl Task {
         poll
     }
 
+    pub fn task_wake(task: Rc<Task>) {
+        let cb = WAKER.get();
+        let task = Rc::into_raw(task);
+    
+        match cb {
+            Some(cb) => {
+                let enqueued = cb.add(FutureEvent::Init(task as _));
+                if !enqueued {
+                    log::warn!("Could not send message to Dart's native port");
+                    unsafe {
+                        drop(Rc::from_raw(task));
+                    }
+                }
+            },
+            None => {
+                PREWAKERS.lock().unwrap().push(FutureEvent::Init(task as _))
+            },
+        }
+
+    }
+
     /// Calls the [`task_wake()`] function by the provided reference if this
     /// [`Task`] s incomplete and there are no [`Poll::Pending`] awake requests
     /// already.
     fn wake_by_ref(this: &Rc<Self>) {
         if !this.is_scheduled.replace(true) {
-            this.cb.add(FutureEvent::Wake);
+            Self::task_wake(this.clone());
         }
     }
 

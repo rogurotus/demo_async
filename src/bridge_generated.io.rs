@@ -2,8 +2,8 @@ use super::*;
 // Section: wire functions
 
 #[no_mangle]
-pub extern "C" fn wire_spawn(port_: i64) {
-    wire_spawn_impl(port_)
+pub extern "C" fn wire_spawn() -> support::WireSyncReturnStruct {
+    wire_spawn_impl()
 }
 
 #[no_mangle]
@@ -12,8 +12,8 @@ pub extern "C" fn wire_poll(raw: u64) -> support::WireSyncReturnStruct {
 }
 
 #[no_mangle]
-pub extern "C" fn wire_drop_future(raw: u64) -> support::WireSyncReturnStruct {
-    wire_drop_future_impl(raw)
+pub extern "C" fn wire_init_executor(port_: i64) {
+    wire_init_executor_impl(port_)
 }
 
 // Section: allocate functions

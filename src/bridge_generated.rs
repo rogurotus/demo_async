@@ -19,14 +19,14 @@ use flutter_rust_bridge::*;
 
 // Section: wire functions
 
-fn wire_spawn_impl(port_: MessagePort) {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap(
+fn wire_spawn_impl() -> support::WireSyncReturnStruct {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
         WrapInfo {
             debug_name: "spawn",
-            port: Some(port_),
-            mode: FfiCallMode::Stream,
+            port: None,
+            mode: FfiCallMode::Sync,
         },
-        move || move |task_callback| spawn(task_callback.stream_sink()),
+        move || Ok(spawn()),
     )
 }
 fn wire_poll_impl(raw: impl Wire2Api<u64> + UnwindSafe) -> support::WireSyncReturnStruct {
@@ -42,17 +42,14 @@ fn wire_poll_impl(raw: impl Wire2Api<u64> + UnwindSafe) -> support::WireSyncRetu
         },
     )
 }
-fn wire_drop_future_impl(raw: impl Wire2Api<u64> + UnwindSafe) -> support::WireSyncReturnStruct {
-    FLUTTER_RUST_BRIDGE_HANDLER.wrap_sync(
+fn wire_init_executor_impl(port_: MessagePort) {
+    FLUTTER_RUST_BRIDGE_HANDLER.wrap(
         WrapInfo {
-            debug_name: "drop_future",
-            port: None,
-            mode: FfiCallMode::Sync,
+            debug_name: "init_executor",
+            port: Some(port_),
+            mode: FfiCallMode::Stream,
         },
-        move || {
-            let api_raw = raw.wire2api();
-            Ok(drop_future(api_raw))
-        },
+        move || move |task_callback| init_executor(task_callback.stream_sink()),
     )
 }
 // Section: wrapper structs
